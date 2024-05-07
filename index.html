@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://unpkg.com/zrender"></script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #canvas {
+        width: 100%;
+        height: 100%;
+      }
+
+      .oper {
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="oper">
+      <button id="bt1">获取坐标数据</button>
+      <button id="bt2">清空</button>
+      <button id="bt3">开始绘制</button>
+    </div>
+    <div id="canvas"></div>
+
+    <script type="module">
+      import * as clipperLib from "js-angusj-clipper";
+      // create an instance of the library (usually only do this once in your app)
+      const clipper = await clipperLib.loadNativeClipperLibInstanceAsync(
+        // let it autodetect which one to use, but also available WasmOnly and AsmJsOnly
+        clipperLib.NativeClipperLibRequestedFormat.WasmWithAsmJsFallback
+      );
+
+      const createArc = (points) => {
+        return new zrender.Arc({
+          shape: {
+            cx: points[0],
+            cy: points[1],
+            r: 4,
+          },
+          style: {
+            stroke: "red",
+          },
+          cursor: "default",
+        });
+      };
+
+      const createLine = (points1, points2) => {
+        return new zrender.Line({
+          shape: {
+            x1: points1[0],
+            y1: points1[1],
+            x2: points2[0],
+            y2: points2[1],
+          },
+          style: {
+            stroke: "red",
+            lineWidth: 2,
+          },
+          cursor: "default",
+        });
+      };
+
+      const updateLine = (line, points1, points2) => {
+        line.attr({
+          shape: {
+            x1: points1[0],
+            y1: points1[1],
+            x2: points2[0],
+            y2: points2[1],
+          },
+        });
+      };
+
+      const createPolygon = (points) => {
+        return new zrender.Polygon({
+          shape: {
+            points,
+          },
+          style: {
+            fill: "rgba(0,0,0,0.5)",
+            stroke: "red",
+            lineWidth: 2,
+            x: 0,
+            y: 0,
+          },
+          cursor: "default",
+        });
+      };
+
+      const createPointText = (points) => {
+        const group = new zrender.Group();
+        points.forEach((point, index) => {
+          const text = new zrender.Text({
+            style: {
+              text: `x:${point[0].toFixed(0)},y:${point[1].toFixed(0)}`,
+              fill: "#000",
+              fontSize: 12,
+            },
+          });
+          const rc = text.getBoundingRect();
+          text.x = point[0] - rc.width / 2;
+          text.y = point[1] - rc.height;
+          group.add(text);
+        });
+        return group;
+      };
+
+      class Renderer {
+        zr = null;
+
+        totalPoints = [
+          [
+            [600, 100],
+            [1000, 100],
+            [1000, 500],
+            [600, 500],
+          ],
+          [
+            [800, 50],
+            [1200, 350],
+            [400, 350],
+          ],
+        ];
+        // totalPoints = [
+        //   [
+        //     [600, 100],
+        //     [735, 100],
+        //     [800, 50],
+        //     [865, 100],
+        //     [1000, 100],
+        //     [1000, 200],
+        //     [1200, 350],
+        //     [1000, 350],
+        //     [1000, 500],
+        //     [1000, 500],
+        //     [600, 500],
+        //     [600, 350],
+        //     [400, 350],
+        //     [600, 200],
+        //   ],
+        // ];
+
+        isStart = false;
+        isDrawing = false;
+        currentGroup = null;
+        moveLine = null;
+        currentPoints = [];
+
+        constructor(el) {
+          this.zr = zrender.init(el);
+          this.render();
+        }
+
+        render() {
+          const [poly1, ...polys] = this.totalPoints.map((item) => {
+            return item.map((point) => ({x: point[0], y: point[1]}))
+          });
+          // get their union
+          const polyResult = clipper.clipToPaths({
+            clipType: clipperLib.ClipType.Union,
+
+            subjectInputs: [{ data: poly1, closed: true }],
+
+            clipInputs: polys.map((poly) => ({data: poly})),
+
+            subjectFillType: clipperLib.PolyFillType.NonZero,
+
+          });
+          console.log(polyResult);
+          this.zr.clear()
+          polyResult.forEach((item) => {
+            const points = item.map((point) => [point.x, point.y])
+            const poly = createPolygon(points)
+            const text = createPointText(points)
+            this.zr.add(poly)
+            this.zr.add(text)
+          })
+        }
+
+        start() {
+          this.zr.on("click", this.draw);
+          this.zr.on("mousemove", this.mousemove);
+          document.addEventListener("keydown", this.keydown);
+        }
+
+        stop() {
+          this.zr.off("click", this.draw);
+          this.zr.off("mousemove", this.mousemove);
+          document.removeEventListener("keydown", this.keydown);
+          this.drawEnd();
+        }
+
+        toggle() {
+          if (this.isStart) {
+            this.stop();
+          } else {
+            this.start();
+          }
+          this.isStart = !this.isStart;
+        }
+
+        draw = (e) => {
+          this.isDrawing = true;
+          if (!this.currentGroup) {
+            this.currentGroup = new zrender.Group();
+            this.zr?.add(this.currentGroup);
+          }
+          this.moveLine = null;
+          const { offsetX, offsetY } = e;
+          const points = [offsetX, offsetY];
+          this.currentPoints.push(points);
+          const arc = createArc(points);
+          this.currentGroup.add(arc);
+        };
+
+        mousemove = (e) => {
+          if (!this.isDrawing) return;
+          const { offsetX, offsetY } = e;
+          if (!this.moveLine) {
+            this.moveLine = createLine(this.currentPoints.at(-1), [
+              offsetX,
+              offsetY,
+            ]);
+            this.currentGroup.add(this.moveLine);
+          } else {
+            updateLine(this.moveLine, this.currentPoints.at(-1), [
+              offsetX,
+              offsetY,
+            ]);
+          }
+        };
+
+        drawEnd() {
+          if (!this.isDrawing) return;
+          this.isDrawing = false;
+          this.moveLine = null;
+          if (this.currentGroup) {
+            this.currentGroup.removeAll();
+            this.currentGroup.dirty();
+            this.currentGroup = null;
+          }
+          if (this.currentPoints.length <= 2) {
+            this.currentPoints = [];
+            return;
+          }
+          this.totalPoints.push(this.currentPoints);
+          this.render();
+          this.currentPoints = [];
+        }
+
+        keydown = (e) => {
+          if (e.key === "Enter" || e.key === "Escape") {
+            this.drawEnd();
+          }
+        };
+
+        clear() {
+          this.zr?.clear();
+          this.totalPoints = [];
+          this.isDrawing = false;
+          this.currentGroup = null;
+          this.moveLine = null;
+          this.currentPoints = [];
+        }
+      }
+
+      const getBtn = document.getElementById("bt1");
+      const clearBtn = document.getElementById("bt2");
+      const drawBtn = document.getElementById("bt3");
+      const container = document.getElementById("canvas");
+
+      const renderer = new Renderer(container);
+
+      getBtn.onclick = () => {
+        console.log(renderer.totalPoints);
+      };
+
+      clearBtn.onclick = () => {
+        renderer.clear();
+      };
+
+      drawBtn.onclick = () => {
+        renderer.toggle();
+        drawBtn.innerText = renderer.isStart ? "停止绘制" : "开始绘制";
+      };
+    </script>
+  </body>
+</html>

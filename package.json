@@ -1,0 +1,18 @@
+{
+  "name": "canvas",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "js-angusj-clipper": "^1.3.1"
+  },
+  "devDependencies": {
+    "vite": "^5.2.11"
+  }
+}
