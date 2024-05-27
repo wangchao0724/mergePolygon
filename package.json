@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "js-angusj-clipper": "^1.3.1"
+    "@turf/turf": "^6.5.0"
   },
   "devDependencies": {
     "vite": "^5.2.11"

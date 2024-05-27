@@ -34,12 +34,7 @@
     <div id="canvas"></div>
 
     <script type="module">
-      import * as clipperLib from "js-angusj-clipper";
-      // create an instance of the library (usually only do this once in your app)
-      const clipper = await clipperLib.loadNativeClipperLibInstanceAsync(
-        // let it autodetect which one to use, but also available WasmOnly and AsmJsOnly
-        clipperLib.NativeClipperLibRequestedFormat.WasmWithAsmJsFallback
-      );
+      import * as turf from '@turf/turf'
 
       const createArc = (points) => {
         return new zrender.Arc({
@@ -103,7 +98,7 @@
         points.forEach((point, index) => {
           const text = new zrender.Text({
             style: {
-              text: `x:${point[0].toFixed(0)},y:${point[1].toFixed(0)}`,
+              text: `x:${point[0]},y:${point[1]}`,
               fill: "#000",
               fontSize: 12,
             },
@@ -125,11 +120,13 @@
             [1000, 100],
             [1000, 500],
             [600, 500],
+            [600, 100],
           ],
           [
             [800, 50],
             [1200, 350],
             [400, 350],
+            [800, 50],
           ],
         ];
         // totalPoints = [
@@ -163,29 +160,42 @@
         }
 
         render() {
-          const [poly1, ...polys] = this.totalPoints.map((item) => {
-            return item.map((point) => ({x: point[0], y: point[1]}))
-          });
-          // get their union
-          const polyResult = clipper.clipToPaths({
-            clipType: clipperLib.ClipType.Union,
+          this.zr.clear();
+          const polys = this.totalPoints.map((points) => turf.polygon([points]))
+          // 定义一个函数来逐对合并多边形
+          const mergePolygons = (polyArray) => {
+              let merged = polyArray[0];
+              for (let i = 1; i < polyArray.length; i++) {
+                  merged = turf.union(merged, polyArray[i]);
+              }
+              return merged;
+          };
 
-            subjectInputs: [{ data: poly1, closed: true }],
+          // 使用定义的函数合并多边形数组
+          const mergedPolygon = mergePolygons(polys);
+          const {coordinates, type} = mergedPolygon.geometry;
 
-            clipInputs: polys.map((poly) => ({data: poly})),
+          if (type === 'Polygon') {
+              const coords = coordinates[0];
+              const p = createPolygon(coords);
+              const t = createPointText(coords);
+              this.zr.add(p)
+              this.zr.add(t)
+              this.totalPoints = coordinates
 
-            subjectFillType: clipperLib.PolyFillType.NonZero,
+          } else {
+            this.totalPoints = []
+              coordinates.forEach(c => {
+                  const coords = c[0];
+                  const p = createPolygon(coords);
+                  const t = createPointText(coords);
+                  this.zr.add(p)
+                  this.zr.add(t)
+                  this.totalPoints.push(...c)
+              });
+          }
 
-          });
-          console.log(polyResult);
-          this.zr.clear()
-          polyResult.forEach((item) => {
-            const points = item.map((point) => [point.x, point.y])
-            const poly = createPolygon(points)
-            const text = createPointText(points)
-            this.zr.add(poly)
-            this.zr.add(text)
-          })
+          console.log(this.totalPoints);
         }
 
         start() {
@@ -254,6 +264,7 @@
             this.currentPoints = [];
             return;
           }
+          this.currentPoints.push(this.currentPoints[0])
           this.totalPoints.push(this.currentPoints);
           this.render();
           this.currentPoints = [];
